@@ -1,9 +1,9 @@
 // ===============================================================================
-// STRATEGY ENGINE API v1.0 (LIQUIDITY POOL MONITORING)
-// This service simulates monitoring critical on-chain liquidity pools and uses 
-// a FallbackProvider for robust, fault-tolerant RPC connections.
+// ARBITRAGE ENGINE API v1.0 (HIGH-FREQUENCY MONITORING)
+// This service simulates monitoring potential arbitrage opportunities across 
+// multiple decentralized exchanges (DEXs) using a robust FallbackProvider.
 // FIX: Using StaticJsonRpcProvider for the fallback pool to reduce log spam 
-// from constantly failing endpoints during setup.
+// from constantly failing public endpoints during setup.
 // ===============================================================================
 
 const express = require('express');
@@ -14,7 +14,7 @@ const app = express();
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'OPTIONS'] }));
 app.use(express.json());
 
-const PORT = process.env.STRATEGY_PORT || 8081;
+const PORT = process.env.ARBITRAGE_PORT || 8082;
 
 // ===============================================================================
 // CONFIGURATION
@@ -33,7 +33,6 @@ let RPC_URLS = [
 ];
 
 if (ETHERSCAN_RPC_URL) {
-    // If a stable, dedicated URL is provided, put it first for the FallbackProvider to prefer it.
     RPC_URLS.unshift(ETHERSCAN_RPC_URL);
     console.log("✅ Using secure RPC URL from environment variable for primary connection.");
 } else {
@@ -41,17 +40,17 @@ if (ETHERSCAN_RPC_URL) {
 }
 
 
-// Simulated Critical Liquidity Pools to Monitor
-const LIQUIDITY_POOLS = [
-    { name: "Uniswap V3 ETH/USDC", address: "0x88e6A0c2d...7A34bEa" },
-    { name: "Curve 3Crv", address: "0xB20b7280A...90515C8" },
-    { name: "Aave V3 ETH Market", address: "0x7d2768dEa...1D1e905F" }
+// Simulated DEX Pairs to Monitor for Arbitrage
+const ARBITRAGE_PAIRS = [
+    { name: "WETH/USDT (Uniswap)", poolAddress: "0x2A1530C4...4c13" },
+    { name: "WETH/USDC (Sushiswap)", poolAddress: "0x397FF154...B4f8" },
+    { name: "DAI/ETH (Balancer)", poolAddress: "0xBA122222...7aA5" }
 ];
 
 let provider = null;
 let currentBlock = 0;
 let monitorStatus = 'initializing';
-let lastMonitorRun = null;
+let lastOpportunity = null;
 
 // ===============================================================================
 // PROVIDER INITIALIZATION WITH FALLBACK (The requested robust implementation)
@@ -60,23 +59,21 @@ let lastMonitorRun = null;
 async function initProvider() {
     monitorStatus = 'connecting';
     try {
-        // FIX: Use StaticJsonRpcProvider instead of JsonRpcProvider. 
-        // This is often better for FallbackProvider inputs, as it reduces 
-        // immediate, noisy connection attempts upon instantiation.
+        // FIX APPLIED: Use StaticJsonRpcProvider to prevent log spam from 
+        // repeated connection checks on unstable public RPCs during setup.
         const providers = RPC_URLS.map(url => new ethers.StaticJsonRpcProvider(url, 'mainnet'));
         
         // Use FallbackProvider for robustness and automatic failover
-        // The quorum of 1 means only one provider needs to succeed.
         const fallbackProvider = new ethers.FallbackProvider(providers, 1);
         
         const blockNum = await fallbackProvider.getBlockNumber();
-        console.log(`✅ Strategy Engine: Connected to Ethereum Mainnet at block: ${blockNum} using FallbackProvider.`);
+        console.log(`✅ Arbitrage Engine: Connected to Ethereum Mainnet at block: ${blockNum} using FallbackProvider.`);
         
         provider = fallbackProvider;
         monitorStatus = 'connected';
         return true;
     } catch (e) {
-        console.error('❌ Strategy Engine: Failed to connect to all RPC endpoints (check URLs):', e.message);
+        console.error('❌ Arbitrage Engine: Failed to connect to all RPC endpoints:', e.message);
         provider = null;
         monitorStatus = 'disconnected';
         return false;
@@ -84,12 +81,12 @@ async function initProvider() {
 }
 
 // ===============================================================================
-// CORE LOGIC: Monitor Pools
+// CORE LOGIC: Find Arbitrage Opportunities
 // ===============================================================================
 
-async function monitorLiquidityPools() {
+async function monitorArbitrage() {
     if (!provider) {
-        console.warn('⚠️ Strategy Engine: Provider not initialized. Attempting reconnection...');
+        console.warn('⚠️ Arbitrage Engine: Provider not initialized. Attempting reconnection...');
         await initProvider();
         if (!provider) return;
     }
@@ -98,30 +95,34 @@ async function monitorLiquidityPools() {
         const blockNum = await provider.getBlockNumber();
         currentBlock = blockNum;
         
-        // Simulate reading token balances or pool reserves for each critical pool
-        const poolData = [];
-        for (const pool of LIQUIDITY_POOLS) {
-            // Simulate fetching data (e.g., token balance of the pool contract)
-            const simulatedReserve = Math.random() * 1000 + 10000; // 10k to 11k simulated reserve
-            poolData.push({
-                name: pool.name,
-                address: pool.address,
-                currentReserve: simulatedReserve.toFixed(2) + ' ETH',
-                status: simulatedReserve > 10500 ? 'Healthy' : 'Warning'
+        let foundOpportunity = false;
+        const reports = [];
+
+        for (const pair of ARBITRAGE_PAIRS) {
+            // Simulate fetching real-time price data (e.g., calling getReserves)
+            const priceDifference = (Math.random() - 0.5) * 0.003; // Simulate -0.3% to +0.3% difference
+            const isArbitrage = Math.abs(priceDifference) > 0.0015; // > 0.15% opportunity
+
+            reports.push({
+                pair: pair.name,
+                difference: (priceDifference * 100).toFixed(4) + '%',
+                opportunity: isArbitrage
             });
+            
+            if (isArbitrage) {
+                foundOpportunity = true;
+                lastOpportunity = {
+                    timestamp: new Date().toISOString(),
+                    blockNumber: currentBlock,
+                    details: `${pair.name}: ${reports[reports.length - 1].difference} difference.`
+                };
+            }
         }
         
-        lastMonitorRun = {
-            timestamp: new Date().toISOString(),
-            blockNumber: currentBlock,
-            poolReports: poolData
-        };
-
-        console.log(`[MONITOR SUCCESS] Block: ${blockNum}. ${poolData.length} pools monitored.`);
+        console.log(`[ARBITRAGE MONITOR] Block: ${blockNum}. Opportunities checked: ${ARBITRAGE_PAIRS.length}. Arbitrage Found: ${foundOpportunity ? 'YES' : 'No'}.`);
 
     } catch (error) {
-        // This error is caught if the FallbackProvider fails to connect to *any* endpoint
-        console.error('[MONITOR FAILURE] Could not fetch data (All RPC endpoints failed).', error.message);
+        console.error('[ARBITRAGE FAILURE] Could not fetch data (RPC error). FallbackProvider should auto-switch.', error.message);
         monitorStatus = 'error';
     }
 }
@@ -131,10 +132,10 @@ async function monitorLiquidityPools() {
 // ===============================================================================
 
 function startAutoMonitor() {
-    console.log(`⏱️ Strategy Engine: Starting auto-monitor. Running every 10 seconds...`);
-    // Run monitoring every 10 seconds
-    setInterval(monitorLiquidityPools, 10000);  
-    monitorLiquidityPools();
+    console.log(`⏱️ Arbitrage Engine: Starting auto-monitor. Running every 2 seconds for high-frequency checks...`);
+    // Run monitoring every 2 seconds
+    setInterval(monitorArbitrage, 2000);  
+    monitorArbitrage();
 }
 
 // ===============================================================================
@@ -143,21 +144,21 @@ function startAutoMonitor() {
 
 app.get('/', (req, res) => {
     res.json({
-        name: 'Strategy Engine API',
+        name: 'Arbitrage Engine API',
         version: '1.0.0',
         status: monitorStatus,
-        mode: `Liquidity Pool Monitoring (Rate: 10s)`,
+        mode: `High-Frequency Monitoring (Rate: 2s)`,
         currentBlock: currentBlock
     });
 });
 
-app.get('/liquidity-status', async (req, res) => {
+app.get('/arbitrage-status', async (req, res) => {
     res.json({
         status: monitorStatus,
         blockchainConnection: provider ? 'robust_connected' : 'disconnected',
         currentBlock: currentBlock,
-        lastReport: lastMonitorRun,
-        monitoredPoolsCount: LIQUIDITY_POOLS.length,
+        lastOpportunity: lastOpportunity,
+        monitoredPairsCount: ARBITRAGE_PAIRS.length,
         timestamp: new Date().toISOString()
     });
 });
@@ -169,7 +170,7 @@ app.get('/liquidity-status', async (req, res) => {
 
 initProvider().then(() => {
     app.listen(PORT, () => {
-        console.log(`🚀 Strategy Engine API v1.0 listening on port ${PORT}`);
+        console.log(`🚀 Arbitrage Engine API v1.0 listening on port ${PORT}`);
         // Start the automated monitoring loop after the server is listening
         startAutoMonitor();
     });
